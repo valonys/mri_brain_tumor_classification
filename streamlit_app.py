@@ -1,10 +1,11 @@
 """
-Streamlit Web Application for MRI Tumor Classification (Cloud Optimized)
+Streamlit Web Application for MRI Tumor Classification
 """
 
 import streamlit as st
 import os
 import sys
+import torch
 import numpy as np
 from PIL import Image
 import plotly.express as px
@@ -14,20 +15,15 @@ from plotly.subplots import make_subplots
 # Add the mri_pipeline_package to the path
 sys.path.append('./mri_pipeline_package')
 
-# Import our custom modules with error handling
-try:
-    from mri_pipeline_package.config import *
-    from mri_pipeline_package.data_loader import MRIDataLoader
-    from mri_pipeline_package.model_manager import MRIModelManager
-    from mri_pipeline_package.visualization_utils import MRIVisualizer
-except ImportError as e:
-    st.error(f"❌ Import error: {e}")
-    st.info("Please ensure all dependencies are installed correctly.")
-    st.stop()
+# Import our custom modules
+from mri_pipeline_package.config import *
+from mri_pipeline_package.data_loader import MRIDataLoader
+from mri_pipeline_package.model_manager import MRIModelManager
+from mri_pipeline_package.visualization_utils import MRIVisualizer
 
 # Page configuration
 st.set_page_config(
-    page_title="🧠 MRI Tumor Classification",
+    page_title=STREAMLIT_TITLE,
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -123,81 +119,64 @@ if 'model_loaded' not in st.session_state:
 
 def initialize_components():
     """Initialize the main components"""
-    try:
-        if st.session_state.data_loader is None:
-            st.session_state.data_loader = MRIDataLoader()
-        if st.session_state.visualizer is None:
-            st.session_state.visualizer = MRIVisualizer()
-    except Exception as e:
-        st.error(f"❌ Error initializing components: {e}")
-        return False
-    return True
+    if st.session_state.data_loader is None:
+        st.session_state.data_loader = MRIDataLoader()
+    if st.session_state.visualizer is None:
+        st.session_state.visualizer = MRIVisualizer()
 
-def load_dataset():
+def load_dataset(dataset_source="local"):
     """Load the MRI dataset"""
-    try:
-        with st.spinner("Loading MRI dataset..."):
-            success = st.session_state.data_loader.load_dataset()
-            if success:
-                st.session_state.data_loader.setup_preprocessing()
-                st.success("✅ Dataset loaded successfully!")
-                return True
-            else:
-                st.error("❌ Failed to load dataset!")
-                return False
-    except Exception as e:
-        st.error(f"❌ Error loading dataset: {e}")
-        return False
+    with st.spinner(f"Loading MRI dataset from {dataset_source}..."):
+        success = st.session_state.data_loader.load_dataset(dataset_source)
+        if success:
+            st.session_state.data_loader.setup_preprocessing()
+            st.success("✅ Dataset loaded successfully!")
+            return True
+        else:
+            st.error("❌ Failed to load dataset!")
+            return False
 
 def load_or_train_model():
     """Load existing model or train a new one"""
     model_path = "./saved_model"
     
     if os.path.exists(model_path) and st.button("Load Existing Model"):
-        try:
-            with st.spinner("Loading existing model..."):
-                if st.session_state.model_manager is None:
-                    st.session_state.model_manager = MRIModelManager(st.session_state.data_loader)
-                
-                success = st.session_state.model_manager.load_model(model_path)
-                if success:
-                    st.session_state.model_loaded = True
-                    st.success("✅ Model loaded successfully!")
-                    return True
-                else:
-                    st.error("❌ Failed to load model!")
-                    return False
-        except Exception as e:
-            st.error(f"❌ Error loading model: {e}")
-            return False
+        with st.spinner("Loading existing model..."):
+            if st.session_state.model_manager is None:
+                st.session_state.model_manager = MRIModelManager(st.session_state.data_loader)
+            
+            success = st.session_state.model_manager.load_model(model_path)
+            if success:
+                st.session_state.model_loaded = True
+                st.success("✅ Model loaded successfully!")
+                return True
+            else:
+                st.error("❌ Failed to load model!")
+                return False
     
     elif st.button("Train New Model"):
-        try:
-            with st.spinner("Setting up and training model..."):
-                if st.session_state.model_manager is None:
-                    st.session_state.model_manager = MRIModelManager(st.session_state.data_loader)
-                
-                # Setup model
-                if not st.session_state.model_manager.setup_model():
-                    st.error("❌ Failed to setup model!")
-                    return False
-                
-                # Setup trainer
-                if not st.session_state.model_manager.setup_trainer():
-                    st.error("❌ Failed to setup trainer!")
-                    return False
-                
-                # Train model
-                if st.session_state.model_manager.train_model():
-                    st.session_state.model_loaded = True
-                    st.success("✅ Model trained successfully!")
-                    return True
-                else:
-                    st.error("❌ Failed to train model!")
-                    return False
-        except Exception as e:
-            st.error(f"❌ Error training model: {e}")
-            return False
+        with st.spinner("Setting up and training model..."):
+            if st.session_state.model_manager is None:
+                st.session_state.model_manager = MRIModelManager(st.session_state.data_loader)
+            
+            # Setup model
+            if not st.session_state.model_manager.setup_model():
+                st.error("❌ Failed to setup model!")
+                return False
+            
+            # Setup trainer
+            if not st.session_state.model_manager.setup_trainer():
+                st.error("❌ Failed to setup trainer!")
+                return False
+            
+            # Train model
+            if st.session_state.model_manager.train_model():
+                st.session_state.model_loaded = True
+                st.success("✅ Model trained successfully!")
+                return True
+            else:
+                st.error("❌ Failed to train model!")
+                return False
     
     return False
 
@@ -207,36 +186,37 @@ def predict_image(image):
         st.error("❌ Model not loaded. Please load or train a model first.")
         return None
     
-    try:
-        with st.spinner("Analyzing image..."):
-            prediction = st.session_state.model_manager.predict_single_image(image)
-            return prediction
-    except Exception as e:
-        st.error(f"❌ Error during prediction: {e}")
-        return None
+    with st.spinner("Analyzing image..."):
+        prediction = st.session_state.model_manager.predict_single_image(image)
+        return prediction
 
 def main():
     """Main application function"""
     
     # Header
-    st.markdown('<h1 class="main-header">🧠 MRI Tumor Classification</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="description">This application uses a Vision Transformer (ViT) to classify MRI brain scans as either containing a tumor or not. Upload your MRI image to get instant classification results.</p>', unsafe_allow_html=True)
+    st.markdown(f'<h1 class="main-header">{STREAMLIT_TITLE}</h1>', unsafe_allow_html=True)
+    st.markdown(f'<p class="description">{STREAMLIT_DESCRIPTION}</p>', unsafe_allow_html=True)
     
     # Initialize components
-    if not initialize_components():
-        st.stop()
+    initialize_components()
     
     # Sidebar
     st.sidebar.markdown("## 🎛️ Control Panel")
     
     # Dataset loading
     st.sidebar.markdown("### 📊 Dataset")
+    dataset_source = st.sidebar.selectbox(
+        "Choose dataset source:",
+        ["local", "huggingface", "demo"],
+        help="Select where to load the dataset from"
+    )
+    
     if st.sidebar.button("Load Dataset"):
-        load_dataset()
+        load_dataset(dataset_source)
     
     # Model management
     st.sidebar.markdown("### 🤖 Model")
-    if st.session_state.data_loader and st.session_state.data_loader.dataset is not None:
+    if st.session_state.data_loader.dataset is not None:
         load_or_train_model()
     
     # File upload
@@ -253,7 +233,7 @@ def main():
     with col1:
         st.markdown('<h2 class="sub-header">📊 Dataset Overview</h2>', unsafe_allow_html=True)
         
-        if st.session_state.data_loader and st.session_state.data_loader.dataset is not None:
+        if st.session_state.data_loader.dataset is not None:
             # Dataset statistics
             distribution = st.session_state.data_loader.get_class_distribution()
             
@@ -273,25 +253,19 @@ def main():
                     st.markdown('</div>', unsafe_allow_html=True)
                 
                 # Class distribution plot
-                try:
-                    fig = st.session_state.visualizer.plot_class_distribution(distribution)
-                    if fig:
-                        st.pyplot(fig)
-                except Exception as e:
-                    st.warning(f"Could not display distribution plot: {e}")
+                fig = st.session_state.visualizer.plot_class_distribution(distribution)
+                if fig:
+                    st.pyplot(fig)
                 
                 # Sample images
                 st.markdown('<h3 class="sub-header">📸 Sample Images</h3>', unsafe_allow_html=True)
                 
                 # Get sample images
-                try:
-                    train_samples = st.session_state.data_loader.get_sample_images("train", 9)
-                    if train_samples:
-                        fig = st.session_state.visualizer.plot_sample_images(train_samples, "Training Samples")
-                        if fig:
-                            st.pyplot(fig)
-                except Exception as e:
-                    st.warning(f"Could not display sample images: {e}")
+                train_samples = st.session_state.data_loader.get_sample_images("train", 9)
+                if train_samples:
+                    fig = st.session_state.visualizer.plot_sample_images(train_samples, "Training Samples")
+                    if fig:
+                        st.pyplot(fig)
         else:
             st.info("👆 Please load the dataset using the sidebar button.")
     
@@ -300,90 +274,81 @@ def main():
         
         if uploaded_file is not None:
             # Display uploaded image
-            try:
-                image = Image.open(uploaded_file)
-                st.image(image, caption="Uploaded MRI Image", use_column_width=True)
+            image = Image.open(uploaded_file)
+            st.image(image, caption="Uploaded MRI Image", use_column_width=True)
+            
+            # Make prediction
+            if st.button("🔬 Analyze Image", type="primary"):
+                prediction = predict_image(image)
                 
-                # Make prediction
-                if st.button("🔬 Analyze Image", type="primary"):
-                    prediction = predict_image(image)
+                if prediction:
+                    # Display prediction results
+                    label = prediction['predicted_label']
+                    confidence = prediction['confidence']
+                    probabilities = prediction['probabilities']
                     
-                    if prediction:
-                        # Display prediction results
-                        label = prediction['predicted_label']
-                        confidence = prediction['confidence']
-                        probabilities = prediction['probabilities']
-                        
-                        # Styled prediction result
-                        css_class = "tumor-prediction" if label == "tumor" else "notumor-prediction"
-                        st.markdown(
-                            f'<div class="prediction-result {css_class}">'
-                            f'<strong>Prediction:</strong> {label.title()}<br>'
-                            f'<strong>Confidence:</strong> {confidence:.2%}'
-                            '</div>',
-                            unsafe_allow_html=True
+                    # Styled prediction result
+                    css_class = "tumor-prediction" if label == "tumor" else "notumor-prediction"
+                    st.markdown(
+                        f'<div class="prediction-result {css_class}">'
+                        f'<strong>Prediction:</strong> {label.title()}<br>'
+                        f'<strong>Confidence:</strong> {confidence:.2%}'
+                        '</div>',
+                        unsafe_allow_html=True
+                    )
+                    
+                    # Probability chart
+                    fig = go.Figure(data=[
+                        go.Bar(
+                            x=LABELS,
+                            y=probabilities,
+                            marker_color=[LABEL_COLORS[label] for label in LABELS],
+                            text=[f'{p:.3f}' for p in probabilities],
+                            textposition='auto'
                         )
-                        
-                        # Probability chart
-                        try:
-                            fig = go.Figure(data=[
-                                go.Bar(
-                                    x=["No Tumor", "Tumor"],
-                                    y=probabilities,
-                                    marker_color=['#2E8B57', '#DC143C'],
-                                    text=[f'{p:.3f}' for p in probabilities],
-                                    textposition='auto'
-                                )
-                            ])
-                            
-                            fig.update_layout(
-                                title="Classification Probabilities",
-                                xaxis_title="Class",
-                                yaxis_title="Probability",
-                                font=dict(family="Tw Cen MT", size=14),
-                                height=400
-                            )
-                            
-                            st.plotly_chart(fig, use_container_width=True)
-                        except Exception as e:
-                            st.warning(f"Could not display probability chart: {e}")
-                        
-                        # Detailed analysis
-                        st.markdown('<h3 class="sub-header">📈 Detailed Analysis</h3>', unsafe_allow_html=True)
-                        
-                        # Image statistics
-                        try:
-                            img_array = np.array(image)
-                            if len(img_array.shape) == 3:
-                                img_array = np.mean(img_array, axis=2)
-                            
-                            col2_1, col2_2, col2_3 = st.columns(3)
-                            with col2_1:
-                                st.metric("Mean Intensity", f"{np.mean(img_array):.2f}")
-                            with col2_2:
-                                st.metric("Std Intensity", f"{np.std(img_array):.2f}")
-                            with col2_3:
-                                st.metric("Max Intensity", f"{np.max(img_array):.0f}")
-                            
-                            # Histogram
-                            fig = px.histogram(
-                                x=img_array.ravel(),
-                                nbins=50,
-                                title="Image Intensity Distribution",
-                                labels={'x': 'Pixel Intensity', 'y': 'Frequency'}
-                            )
-                            fig.update_layout(font=dict(family="Tw Cen MT", size=14))
-                            st.plotly_chart(fig, use_container_width=True)
-                        except Exception as e:
-                            st.warning(f"Could not display detailed analysis: {e}")
-            except Exception as e:
-                st.error(f"❌ Error processing uploaded image: {e}")
+                    ])
+                    
+                    fig.update_layout(
+                        title="Classification Probabilities",
+                        xaxis_title="Class",
+                        yaxis_title="Probability",
+                        font=dict(family=FONT_FAMILY, size=FONT_SIZE),
+                        height=400
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Detailed analysis
+                    st.markdown('<h3 class="sub-header">📈 Detailed Analysis</h3>', unsafe_allow_html=True)
+                    
+                    # Image statistics
+                    img_array = np.array(image)
+                    if len(img_array.shape) == 3:
+                        img_array = np.mean(img_array, axis=2)
+                    
+                    col2_1, col2_2, col2_3 = st.columns(3)
+                    with col2_1:
+                        st.metric("Mean Intensity", f"{np.mean(img_array):.2f}")
+                    with col2_2:
+                        st.metric("Std Intensity", f"{np.std(img_array):.2f}")
+                    with col2_3:
+                        st.metric("Max Intensity", f"{np.max(img_array):.0f}")
+                    
+                    # Histogram
+                    fig = px.histogram(
+                        x=img_array.ravel(),
+                        nbins=50,
+                        title="Image Intensity Distribution",
+                        labels={'x': 'Pixel Intensity', 'y': 'Frequency'}
+                    )
+                    fig.update_layout(font=dict(family=FONT_FAMILY, size=FONT_SIZE))
+                    st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("👆 Please upload an MRI image using the sidebar.")
     
     # Model status
     st.sidebar.markdown("### 📋 Status")
-    if st.session_state.data_loader and st.session_state.data_loader.dataset is not None:
+    if st.session_state.data_loader.dataset is not None:
         st.sidebar.success("✅ Dataset Loaded")
     else:
         st.sidebar.error("❌ Dataset Not Loaded")
